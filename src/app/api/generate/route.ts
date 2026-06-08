@@ -131,7 +131,12 @@ export async function POST(request: Request) {
       text: extractOutputText(response),
     });
   } catch (error) {
+    const fallback = buildLocalFallback(payload);
     const message = error instanceof Error ? error.message : "生成失败，请稍后重试。";
-    return NextResponse.json({ error: message }, { status: 500 });
+
+    return NextResponse.json({
+      ...fallback,
+      note: `OpenAI 暂时不可用，已自动回退为本地结果。原因：${message}`,
+    });
   }
 }
