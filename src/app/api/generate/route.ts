@@ -51,10 +51,20 @@ const extractImageBase64 = (response: { output?: Array<{ type?: string; result?:
 };
 
 export async function POST(request: Request) {
-  const payload = (await request.json()) as StudioPayload;
+  let payload: StudioPayload;
+
+  try {
+    payload = (await request.json()) as StudioPayload;
+  } catch {
+    return NextResponse.json({ error: "缺少有效的 JSON 请求体。" }, { status: 400 });
+  }
 
   if (!payload?.skill) {
     return NextResponse.json({ error: "缺少 skill 参数。" }, { status: 400 });
+  }
+
+  if (!payload?.form || typeof payload.form !== "object") {
+    return NextResponse.json({ error: "缺少 form 参数。" }, { status: 400 });
   }
 
   if (!process.env.OPENAI_API_KEY) {
@@ -62,9 +72,10 @@ export async function POST(request: Request) {
   }
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const promptConfig = buildSkillInstructions(payload);
 
   try {
+    const promptConfig = buildSkillInstructions(payload);
+
     if (payload.skill === "chanping-toutu") {
       const logoAssets = ((payload.form.logoAssets as UploadAsset[]) || []).filter(Boolean);
       const referenceAssets = ((payload.form.referenceAssets as UploadAsset[]) || []).filter(Boolean);
