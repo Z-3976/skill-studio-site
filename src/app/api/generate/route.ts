@@ -10,7 +10,12 @@ import {
 export const runtime = "nodejs";
 
 const textModel = process.env.OPENAI_TEXT_MODEL || "gpt-4.1";
-const imageModel = process.env.OPENAI_IMAGE_MODEL || "gpt-4.1";
+const configuredImageModel = process.env.OPENAI_IMAGE_MODEL?.trim();
+const imageModel =
+  configuredImageModel &&
+  /^(gpt-image-|chatgpt-image-latest|dall-e-)/.test(configuredImageModel)
+    ? configuredImageModel
+    : "gpt-image-1";
 
 const imageEnabled =
   process.env.ENABLE_IMAGE_GENERATION === "true" || process.env.ENABLE_IMAGE_GENERATION === "1";
@@ -159,33 +164,44 @@ export async function POST(request: Request) {
         });
       }
 
-      const imageResponse = await client.responses.create({
-        model: imageModel,
-        input: [
-          {
-            role: "user",
-            content: getImageContent(finalPrompt, logoAssets, referenceAssets) as never,
-          },
-        ],
-        tools: [{ type: "image_generation" }],
-      });
+      try {
+        const imageResponse = await client.responses.create({
+          model: textModel,
+          input: [
+            {
+              role: "user",
+              content: getImageContent(finalPrompt, logoAssets, referenceAssets) as never,
+            },
+          ],
+          tools: [{ type: "image_generation", model: imageModel } as never],
+        });
 
-      const imageBase64 = extractImageBase64(imageResponse);
+        const imageBase64 = extractImageBase64(imageResponse);
 
-      if (!imageBase64) {
+        if (!imageBase64) {
+          return NextResponse.json({
+            type: "prompt",
+            note: "图像生成未返回图片，已回退为最终提示词。",
+            text: finalPrompt,
+          });
+        }
+
+        return NextResponse.json({
+          type: "image",
+          note: "已按 4:3 + 中间 1:1 安全区执行；KT板任务则按竖版宣传板逻辑组织。",
+          text: finalPrompt,
+          imageDataUrl: `data:image/png;base64,${imageBase64}`,
+        });
+      } catch (error) {
+        const guidance = getFallbackGuidance(error, imageModel);
+
         return NextResponse.json({
           type: "prompt",
-          note: "图像生成未返回图片，已回退为最终提示词。",
+          note: guidance.note,
+          actions: guidance.actions,
           text: finalPrompt,
         });
       }
-
-      return NextResponse.json({
-        type: "image",
-        note: "已按 4:3 + 中间 1:1 安全区执行；KT板任务则按竖版宣传板逻辑组织。",
-        text: finalPrompt,
-        imageDataUrl: `data:image/png;base64,${imageBase64}`,
-      });
     }
 
     const response = await client.responses.create({
