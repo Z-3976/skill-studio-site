@@ -8,6 +8,7 @@ type ResultState = {
   type: "text" | "image" | "prompt" | null;
   text: string;
   note?: string;
+  actions?: string[];
   imageDataUrl?: string;
 };
 
@@ -166,6 +167,7 @@ export function SkillStudio() {
         type: data.type,
         text: data.text,
         note: data.note,
+        actions: data.actions,
         imageDataUrl: data.imageDataUrl,
       });
     } catch (submitError) {
@@ -531,7 +533,18 @@ export function SkillStudio() {
                 </p>
               </div>
             ) : null}
-            {result.note ? <p className="result-note">{result.note}</p> : null}
+            {result.note ? (
+              <div className="result-guidance">
+                <p className="result-note">{result.note}</p>
+                {result.actions?.length ? (
+                  <ul className="result-actions">
+                    {result.actions.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
             {result.imageDataUrl ? (
               <div className="result-image-wrap">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

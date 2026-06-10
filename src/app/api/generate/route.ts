@@ -50,6 +50,63 @@ const extractImageBase64 = (response: { output?: Array<{ type?: string; result?:
   return typeof result === "string" ? result : null;
 };
 
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "生成失败，请稍后重试。";
+
+const getFallbackGuidance = (error: unknown, model: string) => {
+  const message = getErrorMessage(error);
+  const lowered = message.toLowerCase();
+
+  if (message.includes("must be verified")) {
+    return {
+      note: `当前配置的 OpenAI 组织还没有完成验证，暂时不能调用 ${model}，已自动回退为本地结果。`,
+      actions: [
+        "前往 OpenAI 平台的 Organization Settings 完成 Verify Organization。",
+        "验证完成后等待约 10 到 15 分钟，再回到网站重新生成。",
+        "如果你想先继续用，现在右侧给出的“最终生图提示词”可以直接拿去生图。",
+      ],
+    };
+  }
+
+  if (lowered.includes("incorrect api key") || lowered.includes("invalid_api_key")) {
+    return {
+      note: "当前配置的 OpenAI API Key 无效，已自动回退为本地结果。",
+      actions: [
+        "检查 Vercel 环境变量里的 OPENAI_API_KEY 是否填写正确。",
+        "如果刚更新过 Key，重新部署一次网站再试。",
+      ],
+    };
+  }
+
+  if (lowered.includes("insufficient_quota") || lowered.includes("quota")) {
+    return {
+      note: "当前 OpenAI 账户额度不足，已自动回退为本地结果。",
+      actions: [
+        "检查 OpenAI 账户余额、套餐或额度限制。",
+        "补充额度后重新生成。",
+      ],
+    };
+  }
+
+  if (lowered.includes("connection error") || lowered.includes("timeout")) {
+    return {
+      note: "OpenAI 连接超时或网络不稳定，已自动回退为本地结果。",
+      actions: [
+        "稍后重试一次。",
+        "如果持续出现，检查 Vercel 部署区域或更换可用的模型配置。",
+      ],
+    };
+  }
+
+  return {
+    note: `OpenAI 暂时不可用，已自动回退为本地结果。原因：${message}`,
+    actions: [
+      "稍后再试一次。",
+      "如果问题持续出现，检查 OpenAI Key、模型权限和 Vercel 环境变量配置。",
+    ],
+  };
+};
+
 export async function POST(request: Request) {
   let payload: StudioPayload;
 
@@ -143,11 +200,12 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const fallback = buildLocalFallback(payload);
-    const message = error instanceof Error ? error.message : "生成失败，请稍后重试。";
+    const guidance = getFallbackGuidance(error, textModel);
 
     return NextResponse.json({
       ...fallback,
-      note: `OpenAI 暂时不可用，已自动回退为本地结果。原因：${message}`,
+      note: guidance.note,
+      actions: guidance.actions,
     });
   }
 }

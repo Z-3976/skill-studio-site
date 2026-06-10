@@ -382,6 +382,29 @@ textarea:focus {
   line-height: 1.8;
 }
 
+.result-guidance {
+  margin-bottom: 18px;
+  border: 1px solid rgba(255, 216, 123, 0.14);
+  border-radius: 18px;
+  padding: 16px 18px;
+  background: linear-gradient(180deg, rgba(255, 216, 123, 0.08), rgba(255, 255, 255, 0.02));
+}
+
+.result-guidance .result-note {
+  margin: 0;
+}
+
+.result-actions {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #e8f3fb;
+  line-height: 1.75;
+}
+
+.result-actions li + li {
+  margin-top: 6px;
+}
+
 .error-text {
   color: var(--danger);
 }
