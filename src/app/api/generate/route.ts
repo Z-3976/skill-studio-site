@@ -49,11 +49,8 @@ const getImageContent = (
 
 const extractOutputText = (response: { output_text?: string }) => response.output_text?.trim() || "";
 
-const extractImageBase64 = (response: { output?: Array<{ type?: string; result?: unknown }> }) => {
-  const imageCall = response.output?.find((item) => item.type === "image_generation_call");
-  const result = imageCall?.result;
-  return typeof result === "string" ? result : null;
-};
+const getVisualImageSize = (designType: StudioPayload["form"][string]) =>
+  typeof designType === "string" && designType.includes("KT") ? "1024x1536" : "1536x1024";
 
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "生成失败，请稍后重试。";
@@ -165,18 +162,15 @@ export async function POST(request: Request) {
       }
 
       try {
-        const imageResponse = await client.responses.create({
-          model: textModel,
-          input: [
-            {
-              role: "user",
-              content: getImageContent(finalPrompt, logoAssets, referenceAssets) as never,
-            },
-          ],
-          tools: [{ type: "image_generation", model: imageModel } as never],
+        const imageResponse = await client.images.generate({
+          model: imageModel,
+          prompt: finalPrompt,
+          size: getVisualImageSize(payload.form.designType),
+          quality: "high",
+          output_format: "png",
         });
 
-        const imageBase64 = extractImageBase64(imageResponse);
+        const imageBase64 = imageResponse.data?.[0]?.b64_json || null;
 
         if (!imageBase64) {
           return NextResponse.json({
