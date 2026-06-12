@@ -1,6 +1,6 @@
 # Agent Skill Studio
 
-把 `chanping-toutu`、`duanshipin-moban`、`zhibo-huashu` 三个 Codex Skill 封装成一个可部署到 Vercel 的网站工作台。
+把 `chanping-toutu`、`duanshipin-moban`、`zhibo-huashu` 三个 Codex Skill 封装成一个可部署到 Vercel 的深色工作台。
 
 ## 本地启动
 
@@ -12,19 +12,17 @@ npm run dev
 
 ## 环境变量
 
-- `OPENAI_API_KEY`
-- `OPENAI_TEXT_MODEL`
-- `OPENAI_IMAGE_MODEL`
-- `ENABLE_IMAGE_GENERATION`
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_BASE_URL`
 - `DEEPSEEK_TEXT_MODEL`
+- `OPENAI_API_KEY`
+- `ENABLE_IMAGE_GENERATION`
 
 当前默认策略：
 
-- 文本生成优先走 OpenAI（`gpt-4.1`）
-- OpenAI 文本失败时，自动回退到 DeepSeek
+- 文本生成优先且默认只走 DeepSeek
 - 图片生成固定走 OpenAI `gpt-image-2`
+- OpenAI 仅用于生图，不参与文案生成
 
 ## 功能
 
