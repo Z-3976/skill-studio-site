@@ -22,7 +22,7 @@ const monoFont = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Skill Studio",
-  description: "把产品头图、短视频模板和直播话术封装成一个更像 Codex 的深色工作台。",
+  description: "把产品头图、短视频模板和直播话术封装成一个更简洁、更高级的深色工作台。",
 };
 
 export default function RootLayout({

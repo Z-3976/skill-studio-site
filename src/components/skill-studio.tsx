@@ -86,8 +86,8 @@ const designOptions = [
   "产品头图",
   "团购头图",
   "套餐图",
-  "A4 KT板",
-  "A3 KT板",
+  "A4 KT 板",
+  "A3 KT 板",
   "健身月卡",
   "私教周卡",
   "门店宣传图",
@@ -95,7 +95,7 @@ const designOptions = [
 
 const videoRoutes = [
   "营销短视频",
-  "官方轻IP（3km大众熟人）",
+  "官方轻 IP（3km 大众熟人）",
   "素人氛围号",
   "预热视频 / 核销视频 / 引流视频",
 ];
@@ -108,34 +108,34 @@ const surfaceMeta: Record<
     scope: string;
     provider: string;
     submitText: string;
-    placeholder: string;
+    helper: string;
     emptyTitle: string;
     emptyText: string;
   }
 > = {
   "chanping-toutu": {
     scope: "Logo / 产品 / 主题色",
-    provider: "DeepSeek 文本 · GPT-Image 2 生图",
-    submitText: "生成视觉",
-    placeholder: "头图 / KT板 / 宣传图",
-    emptyTitle: "等待生成视觉结果",
-    emptyText: "填完左侧参数后开始生成，图片或最终提示词会直接落在这里。",
+    provider: "DeepSeek 组稿 · GPT-Image 2 出图",
+    submitText: "生成图片",
+    helper: "头图默认 4:3；中间 1:1 安全区；KT 板自动切换竖版逻辑。",
+    emptyTitle: "等待视觉结果",
+    emptyText: "生成后，这里会直接出现图片或最终生图提示词。",
   },
   "duanshipin-moban": {
     scope: "路线 / 卖点 / 人群",
     provider: "DeepSeek 文本",
     submitText: "生成脚本",
-    placeholder: "营销 / 轻IP / 氛围号",
+    helper: "营销视频可带价格；轻 IP 和素人路线默认不带营销口径。",
     emptyTitle: "等待脚本结果",
-    emptyText: "选好路线并补齐卖点后，右侧会直接给你可拍版本。",
+    emptyText: "生成后，这里会直接出现可拍版文案。",
   },
   "zhibo-huashu": {
     scope: "位置 / 团单 / 成交流程",
     provider: "DeepSeek 文本",
     submitText: "生成话术",
-    placeholder: "开场 / 逼单 / 核销",
+    helper: "固定顺序：开场 → 优势 → 痛点 → 三拆 → 逼单 → 保障 → 核销。",
     emptyTitle: "等待直播话术",
-    emptyText: "输入门店和团单信息后，右侧会按成交流程输出完整话术。",
+    emptyText: "生成后，这里会直接出现可复用话术。",
   },
 };
 
@@ -167,15 +167,20 @@ const Field = ({
   label,
   children,
   hint,
+  aside,
   className,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
+  aside?: ReactNode;
   className?: string;
 }) => (
-  <label className={`field${className ? ` ${className}` : ""}`}>
-    <span className="field-label">{label}</span>
+  <label className={`field-shell${className ? ` ${className}` : ""}`}>
+    <span className="field-head">
+      <span className="field-label">{label}</span>
+      {aside}
+    </span>
     {children}
     {hint ? <span className="field-hint">{hint}</span> : null}
   </label>
@@ -219,23 +224,28 @@ export function SkillStudio() {
 
   const resultBadge = useMemo(() => {
     if (loading) {
-      return "Running";
+      return "生成中";
     }
 
     if (!result.type) {
-      return "Ready";
+      return "就绪";
     }
 
     if (result.type === "image") {
-      return "Image";
+      return "图片";
     }
 
     if (result.type === "prompt") {
-      return "Prompt";
+      return "提示词";
     }
 
-    return "Text";
+    return "文本";
   }, [loading, result.type]);
+
+  const themePreview = useMemo(() => {
+    const color = visualForm.themeColor.trim();
+    return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : "";
+  }, [visualForm.themeColor]);
 
   const submit = async () => {
     setLoading(true);
@@ -281,38 +291,31 @@ export function SkillStudio() {
   return (
     <main className="app-shell">
       <div className="ambient-layer" aria-hidden="true">
-        <span className="orb orb-a" />
-        <span className="orb orb-b" />
-        <span className="orb orb-c" />
-        <span className="grid-haze" />
+        <span className="ambient-orb orb-left" />
+        <span className="ambient-orb orb-right" />
+        <span className="ambient-orb orb-bottom" />
+        <span className="ambient-grid" />
+        <span className="ambient-beam" />
       </div>
 
-      <section className="studio-shell">
-        <aside className="skill-rail">
-          <div className="rail-brand">
-            <span className="rail-kicker">Skill Studio</span>
-            <h1>深色、高级、直接开工。</h1>
-            <p>DeepSeek 优先，OpenAI 只做生图。</p>
+      <section className="studio-frame">
+        <aside className="sidebar">
+          <div className="sidebar-brand">
+            <span className="eyebrow">Skill Workspace</span>
+            <h1>简洁一点，更像 Codex。</h1>
+            <p>DeepSeek 优先，只有图片生成才调用 OpenAI。</p>
           </div>
 
-          <div className="rail-status">
-            <span className="status-pill">
-              <i className="status-dot" />
-              DeepSeek First
-            </span>
-            <span className="status-pill subtle">GPT-Image 2</span>
-          </div>
-
-          <nav className="skill-nav" aria-label="技能切换">
+          <nav className="skill-stack" aria-label="技能切换">
             {skillCards.map((card) => (
               <button
                 key={card.id}
                 type="button"
-                className={`skill-nav-item${activeSkill === card.id ? " active" : ""}`}
+                className={`skill-tile${activeSkill === card.id ? " active" : ""}`}
                 onClick={() => setActiveSkill(card.id)}
               >
-                <span className="skill-index">{card.index}</span>
-                <div className="skill-copy">
+                <span className="skill-number">{card.index}</span>
+                <div className="skill-tile-copy">
                   <strong>{card.title}</strong>
                   <span>{card.blurb}</span>
                 </div>
@@ -320,40 +323,49 @@ export function SkillStudio() {
             ))}
           </nav>
 
-          <div className="rail-footer">
-            <span className="rail-footer-label">Current</span>
-            <strong>{activeCard.title}</strong>
-            <p>{activeMeta.placeholder}</p>
+          <div className="sidebar-footer">
+            <div className="sidebar-footer-row">
+              <span>Text</span>
+              <strong>DeepSeek</strong>
+            </div>
+            <div className="sidebar-footer-row">
+              <span>Image</span>
+              <strong>GPT-Image 2</strong>
+            </div>
           </div>
         </aside>
 
-        <section className="studio-main">
-          <header className="workspace-topbar">
-            <div>
-              <span className="topbar-kicker">{activeCard.kicker}</span>
+        <section className="workspace">
+          <header className="workspace-header">
+            <div className="workspace-title">
+              <span className="eyebrow">{activeCard.kicker}</span>
               <h2>{activeCard.title}</h2>
             </div>
-            <div className="topbar-pills">
+
+            <div className="workspace-pills">
+              <span className="meta-pill accent">{activeMeta.provider}</span>
               {activeCard.tags.map((tag) => (
-                <span key={tag}>{tag}</span>
+                <span key={tag} className="meta-pill">
+                  {tag}
+                </span>
               ))}
             </div>
           </header>
 
-          <section className="workspace-panels">
-            <div className="panel editor-panel">
-              <div className="panel-head">
+          <section className="workspace-grid">
+            <section className="composer-card">
+              <div className="card-head">
                 <div>
-                  <span className="panel-kicker">Input</span>
+                  <span className="eyebrow">Input</span>
                   <h3>参数</h3>
                 </div>
-                <span className="panel-chip">{activeMeta.scope}</span>
+                <span className="corner-chip">{activeMeta.scope}</span>
               </div>
 
-              <div className="form-scroll">
+              <div className="form-stage">
                 {activeSkill === "chanping-toutu" ? (
-                  <div className="form-grid">
-                    <Field label="类型">
+                  <div className="input-grid">
+                    <Field label="设计类型">
                       <select
                         value={visualForm.designType}
                         onChange={(event) =>
@@ -367,7 +379,8 @@ export function SkillStudio() {
                         ))}
                       </select>
                     </Field>
-                    <Field label="门店">
+
+                    <Field label="门店名称">
                       <input
                         value={visualForm.storeName}
                         onChange={(event) =>
@@ -376,25 +389,28 @@ export function SkillStudio() {
                         placeholder="CC GYM 新街口店"
                       />
                     </Field>
-                    <Field label="产品">
+
+                    <Field label="产品名称">
                       <input
                         value={visualForm.productName}
                         onChange={(event) =>
                           setVisualForm((prev) => ({ ...prev, productName: event.target.value }))
                         }
-                        placeholder="99元健身月卡"
+                        placeholder="99 元健身月卡"
                       />
                     </Field>
-                    <Field label="价格">
+
+                    <Field label="价格信息">
                       <input
                         value={visualForm.price}
                         onChange={(event) =>
                           setVisualForm((prev) => ({ ...prev, price: event.target.value }))
                         }
-                        placeholder="原价259，现价99"
+                        placeholder="原价 259，活动价 99"
                       />
                     </Field>
-                    <Field label="权益" className="span-2">
+
+                    <Field label="产品权益" className="span-2">
                       <textarea
                         value={visualForm.benefits}
                         onChange={(event) =>
@@ -403,25 +419,35 @@ export function SkillStudio() {
                         placeholder="每条一行：免费淋浴 / 免费停车 / 巡场教练 / 体测"
                       />
                     </Field>
-                    <Field label="主题色">
+
+                    <Field
+                      label="主题色"
+                      aside={
+                        themePreview ? (
+                          <span className="color-swatch" style={{ backgroundColor: themePreview }} />
+                        ) : null
+                      }
+                    >
                       <input
                         value={visualForm.themeColor}
                         onChange={(event) =>
                           setVisualForm((prev) => ({ ...prev, themeColor: event.target.value }))
                         }
-                        placeholder="薄荷青 #69d7d1"
+                        placeholder="薄荷青 / #69d7d1"
                       />
                     </Field>
-                    <Field label="补充">
+
+                    <Field label="风格补充">
                       <textarea
                         value={visualForm.extraNotes}
                         onChange={(event) =>
                           setVisualForm((prev) => ({ ...prev, extraNotes: event.target.value }))
                         }
-                        placeholder="高级、清晰、少小字"
+                        placeholder="高级、清晰、少小字、有商业感"
                       />
                     </Field>
-                    <Field label="Logo" hint="支持多张。" className="span-2">
+
+                    <Field label="Logo 素材" hint="支持多张" className="span-2">
                       <input
                         type="file"
                         accept="image/*"
@@ -431,9 +457,10 @@ export function SkillStudio() {
                           setVisualForm((prev) => ({ ...prev, logoAssets: assets }));
                         }}
                       />
-                      <UploadSummary assets={visualForm.logoAssets} emptyLabel="未上传素材" />
+                      <UploadSummary assets={visualForm.logoAssets} emptyLabel="未上传 Logo" />
                     </Field>
-                    <Field label="样板图" hint="可选。" className="span-2">
+
+                    <Field label="参考样板图" hint="可选" className="span-2">
                       <input
                         type="file"
                         accept="image/*"
@@ -443,14 +470,14 @@ export function SkillStudio() {
                           setVisualForm((prev) => ({ ...prev, referenceAssets: assets }));
                         }}
                       />
-                      <UploadSummary assets={visualForm.referenceAssets} emptyLabel="未上传素材" />
+                      <UploadSummary assets={visualForm.referenceAssets} emptyLabel="未上传样板图" />
                     </Field>
                   </div>
                 ) : null}
 
                 {activeSkill === "duanshipin-moban" ? (
-                  <div className="form-grid">
-                    <Field label="路线">
+                  <div className="input-grid">
+                    <Field label="脚本路线">
                       <select
                         value={videoForm.route}
                         onChange={(event) =>
@@ -464,7 +491,8 @@ export function SkillStudio() {
                         ))}
                       </select>
                     </Field>
-                    <Field label="目标">
+
+                    <Field label="视频目标">
                       <input
                         value={videoForm.goal}
                         onChange={(event) =>
@@ -473,16 +501,18 @@ export function SkillStudio() {
                         placeholder="转化 / 信任 / 预热"
                       />
                     </Field>
-                    <Field label="产品">
+
+                    <Field label="产品名称">
                       <input
                         value={videoForm.productName}
                         onChange={(event) =>
                           setVideoForm((prev) => ({ ...prev, productName: event.target.value }))
                         }
-                        placeholder="99元健身月卡"
+                        placeholder="99 元健身月卡"
                       />
                     </Field>
-                    <Field label="价格">
+
+                    <Field label="价格信息">
                       <input
                         value={videoForm.price}
                         onChange={(event) =>
@@ -491,16 +521,18 @@ export function SkillStudio() {
                         placeholder="营销路线可填"
                       />
                     </Field>
-                    <Field label="卖点" className="span-2">
+
+                    <Field label="门店卖点" className="span-2">
                       <textarea
                         value={videoForm.storeAdvantages}
                         onChange={(event) =>
                           setVideoForm((prev) => ({ ...prev, storeAdvantages: event.target.value }))
                         }
-                        placeholder="1000平场地 / 百台进口器械 / 免费淋浴"
+                        placeholder="1000 平场地 / 百台进口器械 / 免费淋浴 / 免费停车"
                       />
                     </Field>
-                    <Field label="人群">
+
+                    <Field label="目标人群">
                       <input
                         value={videoForm.targetAudience}
                         onChange={(event) =>
@@ -509,30 +541,32 @@ export function SkillStudio() {
                         placeholder="附近上班族 / 新手减脂"
                       />
                     </Field>
-                    <Field label="补充">
+
+                    <Field label="补充要求">
                       <textarea
                         value={videoForm.extraNotes}
                         onChange={(event) =>
                           setVideoForm((prev) => ({ ...prev, extraNotes: event.target.value }))
                         }
-                        placeholder="口语化 / 多场景 / 轻一点"
+                        placeholder="口语化 / 多场景 / 节奏快一点"
                       />
                     </Field>
-                    <Field label="参考" className="span-2">
+
+                    <Field label="参考资料" className="span-2">
                       <textarea
                         value={videoForm.sourceNotes}
                         onChange={(event) =>
                           setVideoForm((prev) => ({ ...prev, sourceNotes: event.target.value }))
                         }
-                        placeholder="飞书摘要、账号观察、口播方向"
+                        placeholder="飞书笔记、账号观察、参考表达都可以放这里"
                       />
                     </Field>
                   </div>
                 ) : null}
 
                 {activeSkill === "zhibo-huashu" ? (
-                  <div className="form-grid">
-                    <Field label="模式">
+                  <div className="input-grid">
+                    <Field label="任务模式">
                       <select
                         value={liveForm.mode}
                         onChange={(event) =>
@@ -546,7 +580,8 @@ export function SkillStudio() {
                         ))}
                       </select>
                     </Field>
-                    <Field label="目标">
+
+                    <Field label="直播目标">
                       <input
                         value={liveForm.goal}
                         onChange={(event) =>
@@ -555,7 +590,8 @@ export function SkillStudio() {
                         placeholder="成交 / 核销 / 逼单"
                       />
                     </Field>
-                    <Field label="位置">
+
+                    <Field label="门店位置">
                       <input
                         value={liveForm.location}
                         onChange={(event) =>
@@ -564,7 +600,8 @@ export function SkillStudio() {
                         placeholder="南京新街口三楼"
                       />
                     </Field>
-                    <Field label="主题">
+
+                    <Field label="活动主题">
                       <input
                         value={liveForm.campaignTheme}
                         onChange={(event) =>
@@ -573,96 +610,96 @@ export function SkillStudio() {
                         placeholder="新店预售"
                       />
                     </Field>
-                    <Field label="优势" className="span-2">
+
+                    <Field label="门店优势" className="span-2">
                       <textarea
                         value={liveForm.storeAdvantages}
                         onChange={(event) =>
                           setLiveForm((prev) => ({ ...prev, storeAdvantages: event.target.value }))
                         }
-                        placeholder="1000平场地 / 5米挑高 / 百台进口器械"
+                        placeholder="1000 平场地 / 5 米挑高 / 百台进口器械 / 免费淋浴"
                       />
                     </Field>
-                    <Field label="团单" className="span-2">
+
+                    <Field label="团单内容" className="span-2">
                       <textarea
                         value={liveForm.offerContent}
                         onChange={(event) =>
                           setLiveForm((prev) => ({ ...prev, offerContent: event.target.value }))
                         }
-                        placeholder="99元健身月卡 + 核心权益"
+                        placeholder="99 元健身月卡 + 核心权益"
                       />
                     </Field>
-                    <Field label="人群">
+
+                    <Field label="适合人群">
                       <input
                         value={liveForm.targetAudience}
                         onChange={(event) =>
                           setLiveForm((prev) => ({ ...prev, targetAudience: event.target.value }))
                         }
-                        placeholder="附近想办月卡的新手"
+                        placeholder="附近想办月卡的新客"
                       />
                     </Field>
-                    <Field label="补充">
+
+                    <Field label="补充要求">
                       <textarea
                         value={liveForm.extraNotes}
                         onChange={(event) =>
                           setLiveForm((prev) => ({ ...prev, extraNotes: event.target.value }))
                         }
-                        placeholder="逼单更强 / 7天内核销送礼"
+                        placeholder="逼单更强 / 7 天内核销送礼"
                       />
                     </Field>
-                    <Field label="现有话术" className="span-2">
+
+                    <Field label="已有话术" className="span-2">
                       <textarea
                         value={liveForm.currentScript}
                         onChange={(event) =>
                           setLiveForm((prev) => ({ ...prev, currentScript: event.target.value }))
                         }
-                        placeholder="优化模式可直接贴原稿"
+                        placeholder="优化模式可直接粘贴原稿"
                       />
                     </Field>
                   </div>
                 ) : null}
               </div>
 
-              <div className="panel-actionbar">
-                <div className="action-meta">
-                  <span className="action-label">策略</span>
-                  <strong>{activeMeta.provider}</strong>
-                </div>
+              <div className="card-foot">
+                <p>{activeMeta.helper}</p>
                 <button type="button" className="submit-button" onClick={submit} disabled={loading}>
-                  {loading ? "生成中…" : activeMeta.submitText}
+                  {loading ? "生成中..." : activeMeta.submitText}
                 </button>
               </div>
-            </div>
+            </section>
 
-            <div className="panel output-panel">
-              <div className="panel-head">
+            <section className="result-card">
+              <div className="card-head">
                 <div>
-                  <span className="panel-kicker">Output</span>
+                  <span className="eyebrow">Output</span>
                   <h3>结果</h3>
                 </div>
-                <span className="panel-chip ghost">{resultBadge}</span>
+                <span className="corner-chip ghost">{resultBadge}</span>
               </div>
 
-              <div className={`result-scroll${!error && !result.type ? " empty" : ""}`}>
+              <div className={`result-stage${!error && !result.type ? " empty" : ""}`}>
                 {error ? <p className="error-text">{error}</p> : null}
 
                 {!error && !result.type ? (
                   <div className="result-placeholder">
+                    <span className="placeholder-core" />
                     <strong>{activeMeta.emptyTitle}</strong>
                     <p>{activeMeta.emptyText}</p>
                   </div>
                 ) : null}
 
-                {result.note ? (
-                  <div className="result-note-card">
-                    <p>{result.note}</p>
-                    {result.actions?.length ? (
-                      <ul className="result-actions">
-                        {result.actions.map((action) => (
-                          <li key={action}>{action}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
+                {result.note ? <p className="result-note">{result.note}</p> : null}
+
+                {result.actions?.length ? (
+                  <ul className="result-actions">
+                    {result.actions.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ul>
                 ) : null}
 
                 {result.imageDataUrl ? (
@@ -670,14 +707,14 @@ export function SkillStudio() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={result.imageDataUrl} alt="生成结果" className="result-image" />
                     <a href={result.imageDataUrl} download="skill-studio-result.png" className="download-link">
-                      下载图片
+                      下载 PNG
                     </a>
                   </div>
                 ) : null}
 
                 {result.text ? <pre className="result-text">{result.text}</pre> : null}
               </div>
-            </div>
+            </section>
           </section>
         </section>
       </section>

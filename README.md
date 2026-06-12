@@ -22,7 +22,7 @@ npm run dev
 
 - 文本生成优先且默认只走 DeepSeek
 - 图片生成固定走 OpenAI `gpt-image-2`
-- OpenAI 仅用于生图，不参与文案生成
+- OpenAI 只用于生图，不参与文案生成
 
 ## 功能
 
