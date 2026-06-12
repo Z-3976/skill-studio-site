@@ -8,31 +8,42 @@ import {
 } from "@/lib/skill-prompts";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 type TextGenerationResult = {
   text: string;
-  model: string;
 };
 
-const deepSeekTextModel = process.env.DEEPSEEK_TEXT_MODEL?.trim() || "deepseek-v4-flash";
-const deepSeekBaseUrl = process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com";
+const textModel = process.env.DEEPSEEK_TEXT_MODEL?.trim() || "deepseek-v4-flash";
+const textBaseUrl = process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com";
 const imageModel = "gpt-image-2";
-const textTimeoutMs = 45_000;
-const imageTimeoutMs = 75_000;
+const textTimeoutMs = 6_000;
+const imageTimeoutMs = 10_000;
 
 const imageEnabled =
   process.env.ENABLE_IMAGE_GENERATION === "true" || process.env.ENABLE_IMAGE_GENERATION === "1";
 
-const deepSeekClient = process.env.DEEPSEEK_API_KEY
+const textClient = process.env.DEEPSEEK_API_KEY
   ? new OpenAI({
       apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: deepSeekBaseUrl,
+      baseURL: textBaseUrl,
     })
   : null;
 
-const openAiImageClient = process.env.OPENAI_API_KEY
+const imageClient = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "生成失败，请稍后重试。";
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string) =>
+  Promise.race<T>([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
+    }),
+  ]);
 
 const extractCompletionText = (content: unknown) => {
   if (typeof content === "string") {
@@ -66,17 +77,6 @@ const getVisualImageSize = (designType: StudioPayload["form"][string]) =>
 const isKtLayout = (designType: StudioPayload["form"][string]) =>
   typeof designType === "string" && designType.includes("KT");
 
-const getErrorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : "生成失败，请稍后再试。";
-
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string) =>
-  Promise.race<T>([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
-    }),
-  ]);
-
 const extractAssets = (value: StudioPayload["form"][string]) =>
   Array.isArray(value)
     ? value.filter(
@@ -93,18 +93,9 @@ const extractAssets = (value: StudioPayload["form"][string]) =>
     : [];
 
 const inferExtension = (mediaType: string) => {
-  if (mediaType.includes("png")) {
-    return "png";
-  }
-
-  if (mediaType.includes("webp")) {
-    return "webp";
-  }
-
-  if (mediaType.includes("jpeg") || mediaType.includes("jpg")) {
-    return "jpg";
-  }
-
+  if (mediaType.includes("png")) return "png";
+  if (mediaType.includes("webp")) return "webp";
+  if (mediaType.includes("jpeg") || mediaType.includes("jpg")) return "jpg";
   return "png";
 };
 
@@ -128,73 +119,63 @@ const buildImageFallbackGuidance = (error: unknown) => {
 
   if (message.includes("must be verified")) {
     return {
-      note: "OpenAI 生图通道暂时不可用，已回退为最终生图提示词。",
-      actions: [
-        "去 OpenAI 平台完成组织验证。",
-        "验证完成后等待约 10 到 15 分钟，再重新生成。",
-      ],
+      note: "图片生成暂时不可用，已返回最终生图提示词。",
+      actions: ["稍后重试，如多次失败请检查图片生成配置。"],
     };
   }
 
   if (message.includes("incorrect api key") || message.includes("invalid_api_key")) {
     return {
-      note: "OpenAI 生图 Key 无效，已回退为最终生图提示词。",
-      actions: ["检查 Vercel 里的 OPENAI_API_KEY 是否正确。"],
+      note: "图片生成配置异常，已返回最终生图提示词。",
+      actions: ["请检查图片生成配置后再试。"],
     };
   }
 
   if (message.includes("insufficient_quota") || message.includes("quota")) {
     return {
-      note: "OpenAI 生图额度不足，已回退为最终生图提示词。",
-      actions: ["检查 OpenAI 账户额度或套餐状态。"],
+      note: "图片生成额度不足，已返回最终生图提示词。",
+      actions: ["请检查当前图片生成额度。"],
     };
   }
 
   if (message.includes("timeout") || message.includes("connection")) {
     return {
-      note: "OpenAI 生图连接超时，已回退为最终生图提示词。",
+      note: "图片生成超时，已返回最终生图提示词。",
       actions: ["稍后重试一次。"],
     };
   }
 
   return {
-    note: "OpenAI 生图暂时不可用，已回退为最终生图提示词。",
-    actions: ["稍后重试，或检查 OpenAI 图片权限与环境变量配置。"],
+    note: "图片生成暂时不可用，已返回最终生图提示词。",
+    actions: ["请稍后重试。"],
   };
 };
 
-const generateTextWithDeepSeek = async (
+const generateText = async (
   systemPrompt: string,
   userPrompt: string,
 ): Promise<TextGenerationResult> => {
-  if (!deepSeekClient) {
-    throw new Error("DeepSeek text client is not configured.");
+  if (!textClient) {
+    throw new Error("text client not configured");
   }
 
-  const response = await deepSeekClient.chat.completions.create({
-    model: deepSeekTextModel,
+  const response = await textClient.chat.completions.create({
+    model: textModel,
+    temperature: 0.7,
+    max_tokens: 1200,
     messages: [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      {
-        role: "user",
-        content: userPrompt,
-      },
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
     ],
   });
 
   const text = extractCompletionText(response.choices?.[0]?.message?.content);
 
   if (!text) {
-    throw new Error(`DeepSeek (${deepSeekTextModel}) returned an empty response.`);
+    throw new Error("empty text response");
   }
 
-  return {
-    text,
-    model: deepSeekTextModel,
-  };
+  return { text };
 };
 
 export async function POST(request: Request) {
@@ -203,18 +184,18 @@ export async function POST(request: Request) {
   try {
     payload = (await request.json()) as StudioPayload;
   } catch {
-    return NextResponse.json({ error: "缺少有效的 JSON 请求体。" }, { status: 400 });
+    return NextResponse.json({ error: "缺少有效的请求内容。" }, { status: 400 });
   }
 
   if (!payload?.skill) {
-    return NextResponse.json({ error: "缺少 skill 参数。" }, { status: 400 });
+    return NextResponse.json({ error: "缺少类型参数。" }, { status: 400 });
   }
 
   if (!payload?.form || typeof payload.form !== "object") {
-    return NextResponse.json({ error: "缺少 form 参数。" }, { status: 400 });
+    return NextResponse.json({ error: "缺少表单参数。" }, { status: 400 });
   }
 
-  if (!deepSeekClient && !openAiImageClient) {
+  if (!textClient && !imageClient) {
     return NextResponse.json(buildLocalFallback(payload));
   }
 
@@ -222,33 +203,25 @@ export async function POST(request: Request) {
     const promptConfig = buildSkillInstructions(payload);
 
     if (payload.skill === "chanping-toutu") {
-      if (!deepSeekClient) {
+      if (!textClient) {
         return NextResponse.json({
           ...buildLocalFallback(payload),
-          note: "当前未配置 DeepSeek 文本通道，已返回最终生图提示词。",
+          note: "当前无法生成图片，已返回最终生图提示词。",
         });
       }
 
       const promptResult = await withTimeout(
-        generateTextWithDeepSeek(promptConfig.systemPrompt, promptConfig.userPrompt),
+        generateText(promptConfig.systemPrompt, promptConfig.userPrompt),
         textTimeoutMs,
-        "deepseek-visual-prompt",
+        "visual-prompt",
       );
 
-      const finalPrompt = promptResult.text || "最终生图提示词：请根据用户信息生成高级商业产品头图。";
+      const finalPrompt = promptResult.text || "最终生图提示词：请根据用户信息生成商业宣传图。";
 
-      if (!imageEnabled) {
+      if (!imageEnabled || !imageClient) {
         return NextResponse.json({
           type: "prompt",
-          note: "当前环境未开启图片生成，已返回最终生图提示词。",
-          text: finalPrompt,
-        });
-      }
-
-      if (!openAiImageClient) {
-        return NextResponse.json({
-          type: "prompt",
-          note: "当前未配置 OpenAI 生图通道，已返回最终生图提示词。",
+          note: "当前无法直接出图，已返回最终生图提示词。",
           text: finalPrompt,
         });
       }
@@ -259,7 +232,6 @@ export async function POST(request: Request) {
 
       try {
         let imageBase64: string | null = null;
-        const ktLayout = isKtLayout(payload.form.designType);
 
         if (visualAssets.length) {
           const imageFiles = (
@@ -268,12 +240,12 @@ export async function POST(request: Request) {
 
           if (imageFiles.length) {
             const imageResponse = await withTimeout(
-              openAiImageClient.images.edit({
+              imageClient.images.edit({
                 model: imageModel,
                 image: imageFiles.length === 1 ? imageFiles[0] : imageFiles,
                 prompt: finalPrompt,
                 size: getVisualImageSize(payload.form.designType),
-                quality: "high",
+                quality: "medium",
                 output_format: "png",
                 input_fidelity: "high",
                 background: "auto",
@@ -288,11 +260,11 @@ export async function POST(request: Request) {
 
         if (!imageBase64) {
           const imageResponse = await withTimeout(
-            openAiImageClient.images.generate({
+            imageClient.images.generate({
               model: imageModel,
               prompt: finalPrompt,
               size: getVisualImageSize(payload.form.designType),
-              quality: "high",
+              quality: "medium",
               output_format: "png",
             }),
             imageTimeoutMs,
@@ -305,20 +277,16 @@ export async function POST(request: Request) {
         if (!imageBase64) {
           return NextResponse.json({
             type: "prompt",
-            note: "图片通道没有返回图片，已回退为最终生图提示词。",
+            note: "图片生成没有返回结果，已返回最终生图提示词。",
             text: finalPrompt,
           });
         }
 
         return NextResponse.json({
           type: "image",
-          note: visualAssets.length
-            ? ktLayout
-              ? "已结合上传 Logo / 参考图生成；KT 板按竖版物料逻辑执行。"
-              : "已结合上传 Logo / 参考图生成；头图按 4:3 + 中间 1:1 安全区执行。"
-            : ktLayout
-              ? "已按竖版 KT 物料逻辑出图。"
-              : "已按 4:3 + 中间 1:1 安全区执行。",
+          note: isKtLayout(payload.form.designType)
+            ? "已按竖版版式生成。"
+            : "已按 4:3 和中间安全区生成。",
           text: finalPrompt,
           imageDataUrl: `data:image/png;base64,${imageBase64}`,
         });
@@ -334,30 +302,29 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!deepSeekClient) {
+    if (!textClient) {
       return NextResponse.json({
         ...buildLocalFallback(payload),
-        note: "当前未配置 DeepSeek 文本通道，已回退为本地结果。",
+        note: "当前生成暂时不可用，已返回基础结果。",
       });
     }
 
     const textResult = await withTimeout(
-      generateTextWithDeepSeek(promptConfig.systemPrompt, promptConfig.userPrompt),
+      generateText(promptConfig.systemPrompt, promptConfig.userPrompt),
       textTimeoutMs,
-      "deepseek-text",
+      "text-generate",
     );
 
     return NextResponse.json({
       type: "text",
       text: textResult.text,
-      note: `已由 DeepSeek ${textResult.model} 生成。`,
     });
   } catch {
     const fallback = buildLocalFallback(payload);
 
     return NextResponse.json({
       ...fallback,
-      note: payload.skill === "chanping-toutu" ? "DeepSeek 暂时不可用，已返回最终生图提示词。" : "DeepSeek 暂时不可用，已回退为本地结果。",
+      note: payload.skill === "chanping-toutu" ? "当前无法出图，已返回最终生图提示词。" : "当前生成超时，已返回基础结果。",
     });
   }
 }
