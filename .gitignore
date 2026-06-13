@@ -12,3 +12,4 @@ coverage/
 dev-server.log
 
 .vercel
+.npm-cache/

@@ -92,6 +92,12 @@ const TEXT_REVIEW_SYSTEM = `
 只输出修正后的最终版本，不要解释。
 `;
 
+const FACT_ONLY_RULE =
+  "Only use facts explicitly provided by the user. Do not invent facilities, prices, coach services, gifts, addresses, sales numbers, brand assets, or comparison details.";
+
+const REVIEW_FACT_ONLY_RULE =
+  "Delete any invented details and keep only facts that were explicitly provided by the user or already present in the request.";
+
 const field = (label: string, value: string | boolean | UploadAsset[] | null | undefined) => {
   if (value === null || value === undefined || value === "") {
     return `${label}：未提供`;
@@ -149,7 +155,7 @@ ${summary}
 3. 若上传了参考样图，继承它的风格、材质、版式和光影倾向，但内容必须准确服务当前产品。
 4. 若上传了 Logo，请明确要求保留 Logo 结构特征，并放在上方或视觉核心区。
 5. 只输出最终中文生图提示词。
-`.trim(),
+`.trim() + `\nFact rule: ${FACT_ONLY_RULE}`,
     imageSize: isKtLayout(form.designType) ? "1024x1536" : "1536x1024",
     successNote: isKtLayout(form.designType)
       ? "已按竖版物料逻辑完成生成，并尝试保存到桌面。"
@@ -183,7 +189,7 @@ ${field("补充要求", form.extraNotes)}
 - 屏幕字幕
 - 结尾引导
 - 封面文案
-`.trim(),
+`.trim() + `\nFact rule: ${FACT_ONLY_RULE}`,
   reviewSystemPrompt: TEXT_REVIEW_SYSTEM,
   buildReviewUserPrompt: (draft) => `
 请把下面这版短视频草稿复核成最终版：
@@ -196,7 +202,7 @@ ${draft}
 4. 开头钩子要更容易停留，但不要油腻。
 5. 调整成更像真实门店会拍、会说的话。
 6. 只输出最终版本。
-`.trim(),
+`.trim() + `\nFact rule: ${REVIEW_FACT_ONLY_RULE}`,
 });
 
 const buildLivePrompt = (form: LiveForm): PromptConfig => ({
@@ -216,7 +222,7 @@ ${field("补充要求", form.extraNotes)}
 
 只输出最终成稿，结构严格保持：
 开场 -> 门店优势 -> 痛点对比 -> 团单三拆 -> 逼单 -> 保障 -> 核销
-`.trim(),
+`.trim() + `\nFact rule: ${FACT_ONLY_RULE}`,
   reviewSystemPrompt: TEXT_REVIEW_SYSTEM,
   buildReviewUserPrompt: (draft) => `
 请把下面这版直播话术复核成更顺口、成交逻辑更清楚的最终版：
@@ -229,7 +235,7 @@ ${draft}
 4. 核销要独立讲清楚。
 5. 整体更像主播现场说的话。
 6. 只输出最终版本。
-`.trim(),
+`.trim() + `\nFact rule: ${REVIEW_FACT_ONLY_RULE}`,
 });
 
 const buildXhsNotePrompt = (form: XiaohongshuForm): PromptConfig => ({
@@ -272,7 +278,7 @@ ${field("补充要求", form.extraNotes)}
 结尾互动句：
 标签建议：
 封面文案：
-`.trim(),
+`.trim() + `\nFact rule: ${FACT_ONLY_RULE}`,
   reviewSystemPrompt: TEXT_REVIEW_SYSTEM,
   buildReviewUserPrompt: (draft) => `
 请把下面这版小红书笔记复核成最终版：
@@ -284,7 +290,7 @@ ${draft}
 3. 保留真实门店感、本地生活感和健身房语境。
 4. 标题要像小红书，不要像海报文案。
 5. 结构保持不变，只输出最终版本。
-`.trim(),
+`.trim() + `\nFact rule: ${REVIEW_FACT_ONLY_RULE}`,
 });
 
 const buildXhsVisualPrompt = (form: XiaohongshuForm): PromptConfig => {
@@ -322,7 +328,7 @@ ${summary}
 5. 若是轻 IP / 探店种草型，不要做强促销海报感。
 6. 若给了 Logo，只做弱品牌露出。
 7. 只输出最终中文生图提示词。
-`.trim(),
+`.trim() + `\nFact rule: ${FACT_ONLY_RULE}`,
     imageSize: "1024x1536",
     successNote: "已按 3:4 小红书封面图逻辑完成生成，并尝试保存到桌面。",
   };
