@@ -22,7 +22,7 @@ const monoFont = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "门店内容工作台",
-  description: "把产品头图、短视频模板和直播话术放到一个更简洁、更清晰的工作页面里。",
+  description: "统一生成产品头图、短视频脚本、直播话术和小红书笔记内容。",
 };
 
 export default function RootLayout({

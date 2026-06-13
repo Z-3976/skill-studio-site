@@ -1,50 +1,35 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import Image from "next/image";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { skillCards, type SkillId } from "@/lib/site-data";
-import type { UploadAsset } from "@/lib/skill-prompts";
+import { buildUserSummary, isImagePayload } from "@/lib/skill-prompts";
+import {
+  deleteHistoryRecord,
+  loadHistoryRecords,
+  loadUserProfile,
+  saveHistoryRecord,
+  saveUserProfile,
+  type HistoryRecord,
+  type UserProfile,
+} from "@/lib/studio-storage";
+import type {
+  AssistantResult,
+  LiveForm,
+  StudioMessage,
+  StudioPayload,
+  StreamEvent,
+  UploadAsset,
+  VideoForm,
+  VisualForm,
+  XiaohongshuForm,
+} from "@/lib/studio-types";
 
-type ResultState = {
-  type: "text" | "image" | "prompt" | null;
-  text: string;
-  note?: string;
-  actions?: string[];
-  imageDataUrl?: string;
-};
-
-type VisualForm = {
-  designType: string;
-  storeName: string;
-  productName: string;
-  price: string;
-  benefits: string;
-  themeColor: string;
-  extraNotes: string;
-  logoAssets: UploadAsset[];
-  referenceAssets: UploadAsset[];
-};
-
-type VideoForm = {
-  route: string;
-  goal: string;
-  productName: string;
-  price: string;
-  storeAdvantages: string;
-  targetAudience: string;
-  sourceNotes: string;
-  extraNotes: string;
-};
-
-type LiveForm = {
-  mode: string;
-  location: string;
-  campaignTheme: string;
-  storeAdvantages: string;
-  offerContent: string;
-  goal: string;
-  targetAudience: string;
-  currentScript: string;
-  extraNotes: string;
+type SurfaceMeta = {
+  scope: string;
+  submitText: string;
+  pendingText: string;
+  emptyText: string;
 };
 
 const visualDefaults: VisualForm = {
@@ -82,56 +67,69 @@ const liveDefaults: LiveForm = {
   extraNotes: "",
 };
 
-const designOptions = [
-  "产品头图",
-  "团购头图",
-  "套餐图",
-  "A4 KT 板",
-  "A3 KT 板",
-  "健身月卡",
-  "私教周卡",
-  "门店宣传图",
-];
+const xhsDefaults: XiaohongshuForm = {
+  outputType: "小红书笔记",
+  route: "探店种草笔记",
+  goal: "种草进店",
+  storeName: "",
+  location: "",
+  productName: "",
+  price: "",
+  benefits: "",
+  storeHighlights: "",
+  targetAudience: "",
+  referenceStyle: "",
+  themeColor: "",
+  tone: "",
+  hashtags: "",
+  extraNotes: "",
+  logoAssets: [],
+  referenceAssets: [],
+};
 
-const videoRoutes = [
-  "营销短视频",
-  "官方轻 IP（3km 大众熟人）",
-  "素人氛围号",
-  "预热视频 / 核销视频 / 引流视频",
-];
+const emptyProfile: UserProfile = {
+  storeName: "",
+  location: "",
+  themeColor: "",
+  noteTone: "",
+  storeTags: "",
+  defaultAudience: "",
+  coverStyle: "",
+  topicWords: "",
+};
+
+const designOptions = ["产品头图", "团购头图", "套餐图", "A4 KT板", "A3 KT板", "健身月卡", "私教周卡", "门店宣传图"];
+
+const videoRoutes = ["营销短视频", "官方轻IP（3km大众熟人）", "素人氛围号", "预热视频 / 核销视频 / 引流视频"];
 
 const liveModes = ["生成模式", "优化模式"];
+const xhsOutputs: XiaohongshuForm["outputType"][] = ["小红书笔记", "小红书笔记图"];
+const xhsRoutes = ["团购转化笔记", "探店种草笔记", "轻IP日常笔记", "干货清单笔记"];
 
-const surfaceMeta: Record<
-  SkillId,
-  {
-    scope: string;
-    submitText: string;
-    helper: string;
-    emptyTitle: string;
-    emptyText: string;
-  }
-> = {
+const surfaceMeta: Record<SkillId, SurfaceMeta> = {
   "chanping-toutu": {
     scope: "Logo / 产品 / 主题色",
     submitText: "生成图片",
-    helper: "头图默认 4:3，核心信息自动按安全区整理；KT 板使用竖版逻辑。",
-    emptyTitle: "等待结果",
-    emptyText: "生成后，这里会显示图片或最终提示词。",
+    pendingText: "正在整理设计参数并生成图片",
+    emptyText: "填好门店和产品信息后，这里会像聊天一样展示生成过程和结果。",
   },
   "duanshipin-moban": {
     scope: "路线 / 卖点 / 人群",
     submitText: "生成脚本",
-    helper: "营销路线可带价格，轻 IP 和氛围路线默认不带营销口径。",
-    emptyTitle: "等待结果",
-    emptyText: "生成后，这里会显示可直接拍的脚本。",
+    pendingText: "正在生成并复核短视频脚本",
+    emptyText: "脚本会在这里逐步展开，适合直接拿去拍摄。",
   },
   "zhibo-huashu": {
     scope: "位置 / 团单 / 成交流程",
     submitText: "生成话术",
-    helper: "固定顺序：开场、优势、痛点、三拆、逼单、保障、核销。",
-    emptyTitle: "等待结果",
-    emptyText: "生成后，这里会显示可直接使用的话术。",
+    pendingText: "正在生成并复核直播话术",
+    emptyText: "这里会输出直播成稿，也会保留最近生成的历史记录。",
+  },
+  "xiaohongshu-biji": {
+    scope: "笔记 / 封面 / 种草路线",
+    submitText: "生成内容",
+    pendingText: "正在生成并复核小红书内容",
+    emptyText: "这里会展示笔记正文或封面图结果，并自动进入历史库。",
   },
 };
 
@@ -159,40 +157,104 @@ const readFiles = async (files: FileList | null) => {
   return Promise.all(entries);
 };
 
+const createId = () => globalThis.crypto?.randomUUID?.() || `skill-${Date.now()}-${Math.random()}`;
+
+const formatTime = (value: string) =>
+  new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+
 const getErrorText = (error: unknown) => {
   if (error instanceof DOMException && error.name === "AbortError") {
     return "生成超时，请稍后重试。";
   }
 
   if (error instanceof Error) {
-    if (error.message === "Failed to fetch") {
-      return "请求没有成功，请稍后重试。";
-    }
-
-    return error.message;
+    return error.message || "生成失败，请稍后重试。";
   }
 
   return "生成失败，请稍后重试。";
+};
+
+const getHistoryTitle = (payload: StudioPayload) => {
+  switch (payload.skill) {
+    case "chanping-toutu":
+      return `${payload.form.designType} · ${payload.form.productName || payload.form.storeName || "未命名"}`;
+    case "duanshipin-moban":
+      return `${payload.form.route} · ${payload.form.productName || "短视频脚本"}`;
+    case "zhibo-huashu":
+      return `${payload.form.campaignTheme || "直播话术"} · ${payload.form.location || "门店直播"}`;
+    case "xiaohongshu-biji":
+      return payload.form.outputType === "小红书笔记图"
+        ? `小红书封面 · ${payload.form.productName || payload.form.storeName || "未命名"}`
+        : `${payload.form.route} · ${payload.form.productName || "小红书笔记"}`;
+    default:
+      return "未命名内容";
+  }
+};
+
+const getHistorySummary = (payload: StudioPayload, result: AssistantResult) => {
+  if (payload.skill === "xiaohongshu-biji" && result.meta?.coverCopy) {
+    return result.meta.coverCopy;
+  }
+
+  const preview = result.text.replace(/\s+/g, " ").slice(0, 72).trim();
+  return preview || "已生成内容";
+};
+
+const applyProfileDefaults = (
+  profile: UserProfile,
+  setVisualForm: React.Dispatch<React.SetStateAction<VisualForm>>,
+  setVideoForm: React.Dispatch<React.SetStateAction<VideoForm>>,
+  setLiveForm: React.Dispatch<React.SetStateAction<LiveForm>>,
+  setXhsForm: React.Dispatch<React.SetStateAction<XiaohongshuForm>>,
+) => {
+  setVisualForm((prev) => ({
+    ...prev,
+    storeName: prev.storeName || profile.storeName,
+    themeColor: prev.themeColor || profile.themeColor,
+  }));
+
+  setVideoForm((prev) => ({
+    ...prev,
+    targetAudience: prev.targetAudience || profile.defaultAudience,
+    extraNotes: prev.extraNotes || profile.storeTags,
+  }));
+
+  setLiveForm((prev) => ({
+    ...prev,
+    location: prev.location || profile.location,
+    targetAudience: prev.targetAudience || profile.defaultAudience,
+  }));
+
+  setXhsForm((prev) => ({
+    ...prev,
+    storeName: prev.storeName || profile.storeName,
+    location: prev.location || profile.location,
+    themeColor: prev.themeColor || profile.themeColor,
+    tone: prev.tone || profile.noteTone,
+    targetAudience: prev.targetAudience || profile.defaultAudience,
+    referenceStyle: prev.referenceStyle || profile.coverStyle,
+    hashtags: prev.hashtags || profile.topicWords,
+  }));
 };
 
 const Field = ({
   label,
   children,
   hint,
-  aside,
   className,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
-  aside?: ReactNode;
   className?: string;
 }) => (
   <div className={`field-card${className ? ` ${className}` : ""}`}>
-    <div className="field-top">
-      <span className="field-label">{label}</span>
-      {aside}
-    </div>
+    <span className="field-label">{label}</span>
     {children}
     {hint ? <span className="field-hint">{hint}</span> : null}
   </div>
@@ -236,8 +298,8 @@ const UploadSummary = ({
 }) => (
   <div className="file-summary">
     {assets.length ? (
-      assets.map((asset, index) => (
-        <span key={`${asset.name}-${index}`} className="file-chip">
+      assets.map((asset) => (
+        <span key={`${asset.name}-${asset.dataUrl.slice(0, 16)}`} className="file-chip">
           {asset.name}
         </span>
       ))
@@ -247,87 +309,350 @@ const UploadSummary = ({
   </div>
 );
 
+const MetaSummary = ({ message }: { message: StudioMessage }) => {
+  if (!message.meta) {
+    return null;
+  }
+
+  const { route, titles, coverCopy, hashtags, reviewSummary } = message.meta;
+
+  if (!route && !titles?.length && !coverCopy && !hashtags?.length && !reviewSummary) {
+    return null;
+  }
+
+  return (
+    <div className="meta-block">
+      {route ? (
+        <div className="meta-row">
+          <span className="meta-label">路线</span>
+          <span className="mini-tag strong">{route}</span>
+        </div>
+      ) : null}
+
+      {titles?.length ? (
+        <div className="meta-row">
+          <span className="meta-label">标题</span>
+          <div className="meta-tags">
+            {titles.map((title) => (
+              <span key={title} className="mini-tag">
+                {title}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {coverCopy ? (
+        <div className="meta-row">
+          <span className="meta-label">封面文案</span>
+          <span className="mini-tag strong">{coverCopy}</span>
+        </div>
+      ) : null}
+
+      {hashtags?.length ? (
+        <div className="meta-row">
+          <span className="meta-label">标签</span>
+          <div className="meta-tags">
+            {hashtags.map((tag) => (
+              <span key={tag} className="mini-tag">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {reviewSummary ? <p className="message-note">{reviewSummary}</p> : null}
+    </div>
+  );
+};
+
 export function SkillStudio() {
   const [activeSkill, setActiveSkill] = useState<SkillId>("chanping-toutu");
   const [visualForm, setVisualForm] = useState<VisualForm>(visualDefaults);
   const [videoForm, setVideoForm] = useState<VideoForm>(videoDefaults);
   const [liveForm, setLiveForm] = useState<LiveForm>(liveDefaults);
+  const [xhsForm, setXhsForm] = useState<XiaohongshuForm>(xhsDefaults);
+  const [messages, setMessages] = useState<StudioMessage[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>([]);
+  const [profile, setProfile] = useState<UserProfile>(emptyProfile);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<ResultState>({ type: null, text: "" });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState("");
+  const endRef = useRef<HTMLDivElement | null>(null);
 
-  const activeCard = useMemo(
-    () => skillCards.find((card) => card.id === activeSkill) || skillCards[0],
-    [activeSkill],
-  );
-
+  const activeCard = skillCards.find((card) => card.id === activeSkill) || skillCards[0];
   const activeMeta = surfaceMeta[activeSkill];
 
-  const resultBadge = useMemo(() => {
-    if (loading) return "生成中";
-    if (!result.type) return "待生成";
-    if (result.type === "image") return "图片";
-    if (result.type === "prompt") return "提示词";
-    return "文本";
-  }, [loading, result.type]);
+  useEffect(() => {
+    let cancelled = false;
 
-  const themePreview = useMemo(() => {
-    const color = visualForm.themeColor.trim();
-    return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : "";
-  }, [visualForm.themeColor]);
+    loadHistoryRecords().then((records) => {
+      if (!cancelled) {
+        setHistoryRecords(records);
+      }
+    });
+
+    const storedProfile = loadUserProfile();
+    setProfile(storedProfile);
+    applyProfileDefaults(storedProfile, setVisualForm, setVideoForm, setLiveForm, setXhsForm);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, loading, error]);
+
+  const buildPayload = (): StudioPayload => {
+    switch (activeSkill) {
+      case "chanping-toutu":
+        return { skill: activeSkill, form: visualForm };
+      case "duanshipin-moban":
+        return { skill: activeSkill, form: videoForm };
+      case "zhibo-huashu":
+        return { skill: activeSkill, form: liveForm };
+      case "xiaohongshu-biji":
+        return { skill: activeSkill, form: xhsForm };
+      default:
+        return { skill: "chanping-toutu", form: visualForm };
+    }
+  };
+
+  const updateAssistantMessage = (messageId: string, patch: Partial<StudioMessage>) => {
+    setMessages((prev) =>
+      prev.map((message) => (message.id === messageId ? { ...message, ...patch } : message)),
+    );
+  };
+
+  const prependHistory = (record: HistoryRecord) => {
+    setHistoryRecords((prev) => [record, ...prev.filter((item) => item.id !== record.id)].slice(0, 24));
+  };
+
+  const finalizeRecord = async (payload: StudioPayload, userMessage: StudioMessage, result: AssistantResult) => {
+    const assistantMessage: StudioMessage = {
+      id: createId(),
+      role: "assistant",
+      skillId: payload.skill,
+      title: result.type === "image" ? "已生成图片" : "已生成内容",
+      content: result.text,
+      createdAt: new Date().toISOString(),
+      note: result.note,
+      actions: result.actions,
+      imageDataUrl: result.imageDataUrl,
+      resultType: result.type,
+      meta: result.meta,
+    };
+
+    const record: HistoryRecord = {
+      id: createId(),
+      skillId: payload.skill,
+      title: getHistoryTitle(payload),
+      summary: getHistorySummary(payload, result),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      starred: false,
+      resultType: result.type,
+      messages: [userMessage, assistantMessage],
+      meta: result.meta,
+    };
+
+    await saveHistoryRecord(record);
+    prependHistory(record);
+    setSelectedHistoryId(record.id);
+  };
 
   const submit = async () => {
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 30_000);
+    const payload = buildPayload();
+    const userMessage: StudioMessage = {
+      id: createId(),
+      role: "user",
+      skillId: payload.skill,
+      title: getHistoryTitle(payload),
+      content: buildUserSummary(payload),
+      createdAt: new Date().toISOString(),
+    };
 
-    setLoading(true);
+    const assistantId = createId();
+    const assistantPlaceholder: StudioMessage = {
+      id: assistantId,
+      role: "assistant",
+      skillId: payload.skill,
+      title: activeMeta.submitText,
+      content: "",
+      note: activeMeta.pendingText,
+      createdAt: new Date().toISOString(),
+    };
+
     setError("");
-    setResult({ type: null, text: "" });
+    setSelectedHistoryId("");
+    setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
+    setLoading(true);
 
-    const payload =
-      activeSkill === "chanping-toutu"
-        ? { skill: activeSkill, form: visualForm }
-        : activeSkill === "duanshipin-moban"
-          ? { skill: activeSkill, form: videoForm }
-          : { skill: activeSkill, form: liveForm };
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 240_000);
 
     try {
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-        signal: controller.signal,
-        body: JSON.stringify(payload),
-      });
+      if (!isImagePayload(payload)) {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-stream-text": "1",
+          },
+          cache: "no-store",
+          signal: controller.signal,
+          body: JSON.stringify(payload),
+        });
 
-      const contentType = response.headers.get("content-type") || "";
-      const data = contentType.includes("application/json")
-        ? ((await response.json()) as ResultState & { error?: string })
-        : null;
+        if (!response.ok || !response.body) {
+          const data = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(data?.error || "生成失败，请稍后重试。");
+        }
 
-      if (!response.ok) {
-        throw new Error(data?.error || "生成失败，请稍后重试。");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalResult: AssistantResult | null = null;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          let lineBreakIndex = buffer.indexOf("\n");
+
+          while (lineBreakIndex >= 0) {
+            const line = buffer.slice(0, lineBreakIndex).trim();
+            buffer = buffer.slice(lineBreakIndex + 1);
+
+            if (line) {
+              const event = JSON.parse(line) as StreamEvent;
+
+              if (event.type === "status") {
+                updateAssistantMessage(assistantId, { note: event.message });
+              }
+
+              if (event.type === "chunk") {
+                setMessages((prev) =>
+                  prev.map((message) =>
+                    message.id === assistantId
+                      ? { ...message, content: `${message.content}${event.text}` }
+                      : message,
+                  ),
+                );
+              }
+
+              if (event.type === "result") {
+                finalResult = event.data;
+                updateAssistantMessage(assistantId, {
+                  content: event.data.text,
+                  note: event.data.note,
+                  actions: event.data.actions,
+                  imageDataUrl: event.data.imageDataUrl,
+                  resultType: event.data.type,
+                  meta: event.data.meta,
+                });
+              }
+
+              if (event.type === "error") {
+                throw new Error(event.error);
+              }
+            }
+
+            lineBreakIndex = buffer.indexOf("\n");
+          }
+        }
+
+        if (finalResult) {
+          await finalizeRecord(payload, userMessage, finalResult);
+        }
+      } else {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+          signal: controller.signal,
+          body: JSON.stringify(payload),
+        });
+
+        const data = (await response.json()) as AssistantResult & { error?: string };
+
+        if (!response.ok) {
+          throw new Error(data?.error || "生成失败，请稍后重试。");
+        }
+
+        updateAssistantMessage(assistantId, {
+          content: data.text,
+          note: data.note,
+          actions: data.actions,
+          imageDataUrl: data.imageDataUrl,
+          resultType: data.type,
+          meta: data.meta,
+        });
+
+        await finalizeRecord(payload, userMessage, data);
       }
-
-      if (!data) {
-        throw new Error("结果暂时不可用，请稍后重试。");
-      }
-
-      setResult({
-        type: data.type,
-        text: data.text,
-        note: data.note,
-        actions: data.actions,
-        imageDataUrl: data.imageDataUrl,
-      });
     } catch (submitError) {
       setError(getErrorText(submitError));
+      updateAssistantMessage(assistantId, {
+        note: "这次没有顺利生成出来，可以调整信息后再试一次。",
+      });
     } finally {
       window.clearTimeout(timeoutId);
       setLoading(false);
     }
+  };
+
+  const startNewChat = () => {
+    setMessages([]);
+    setSelectedHistoryId("");
+    setError("");
+  };
+
+  const openHistory = (record: HistoryRecord) => {
+    setActiveSkill(record.skillId);
+    setMessages(record.messages);
+    setSelectedHistoryId(record.id);
+    setError("");
+  };
+
+  const toggleHistoryStar = async (recordId: string) => {
+    const target = historyRecords.find((record) => record.id === recordId);
+    if (!target) {
+      return;
+    }
+
+    const nextRecord = {
+      ...target,
+      starred: !target.starred,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await saveHistoryRecord(nextRecord);
+    prependHistory(nextRecord);
+  };
+
+  const removeHistory = async (recordId: string) => {
+    await deleteHistoryRecord(recordId);
+    setHistoryRecords((prev) => prev.filter((item) => item.id !== recordId));
+
+    if (selectedHistoryId === recordId) {
+      startNewChat();
+    }
+  };
+
+  const saveProfile = () => {
+    saveUserProfile(profile);
+    applyProfileDefaults(profile, setVisualForm, setVideoForm, setLiveForm, setXhsForm);
+    setSettingsOpen(false);
   };
 
   return (
@@ -336,13 +661,19 @@ export function SkillStudio() {
 
       <section className="studio-shell">
         <aside className="sidebar">
-          <div className="sidebar-brand">
-            <span className="sidebar-kicker">门店内容工作台</span>
-            <h1>头图、短视频、直播话术</h1>
-            <p>把常用内容放到一个页面里，更快完成生成和调整。</p>
+          <div className="sidebar-top">
+            <div className="sidebar-brand">
+              <span className="sidebar-kicker">Store Studio</span>
+              <h1>门店内容工作台</h1>
+              <p>像聊天一样做图、写脚本、出直播和小红书。</p>
+            </div>
+
+            <button type="button" className="ghost-button" onClick={startNewChat}>
+              新建对话
+            </button>
           </div>
 
-          <nav className="skill-list" aria-label="技能切换">
+          <nav className="skill-list">
             {skillCards.map((card) => (
               <button
                 key={card.id}
@@ -351,13 +682,63 @@ export function SkillStudio() {
                 onClick={() => setActiveSkill(card.id)}
               >
                 <span className="skill-index">{card.index}</span>
-                <div className="skill-copy">
+                <span className="skill-copy">
                   <strong>{card.title}</strong>
                   <span>{card.blurb}</span>
-                </div>
+                </span>
               </button>
             ))}
           </nav>
+
+          <section className="history-section">
+            <div className="section-head">
+              <span className="section-label">历史</span>
+            </div>
+
+            <div className="history-list">
+              {historyRecords.length ? (
+                historyRecords.map((record) => (
+                  <div
+                    key={record.id}
+                    className={`history-item${selectedHistoryId === record.id ? " active" : ""}`}
+                  >
+                    <button type="button" className="history-main" onClick={() => openHistory(record)}>
+                      <strong>{record.title}</strong>
+                      <span>{record.summary}</span>
+                      <small>{formatTime(record.updatedAt)}</small>
+                    </button>
+
+                    <div className="history-actions">
+                      <button
+                        type="button"
+                        className={`icon-button${record.starred ? " active" : ""}`}
+                        onClick={() => void toggleHistoryStar(record.id)}
+                        aria-label="收藏"
+                      >
+                        ★
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        onClick={() => void removeHistory(record.id)}
+                        aria-label="删除"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="history-empty">还没有历史记录。</p>
+              )}
+            </div>
+          </section>
+
+          <div className="sidebar-footer">
+            <button type="button" className="ghost-button" onClick={() => setSettingsOpen(true)}>
+              用户信息
+            </button>
+          </div>
         </aside>
 
         <section className="workspace">
@@ -365,10 +746,11 @@ export function SkillStudio() {
             <div className="workspace-title">
               <span className="workspace-kicker">{activeCard.kicker}</span>
               <h2>{activeCard.title}</h2>
-              <p>{activeMeta.helper}</p>
+              <p>{activeCard.blurb}</p>
             </div>
 
             <div className="tag-row">
+              <span className="scope-pill">{activeMeta.scope}</span>
               {activeCard.tags.map((tag) => (
                 <span key={tag} className="tag-pill">
                   {tag}
@@ -377,18 +759,85 @@ export function SkillStudio() {
             </div>
           </header>
 
-          <div className="workspace-grid">
-            <section className="editor-card">
-              <div className="card-header">
+          <section className="thread-panel">
+            {messages.length ? (
+              <>
+                {messages.map((message) => (
+                  <article key={message.id} className={`message-card ${message.role}`}>
+                    <div className="message-head">
+                      <div>
+                        <strong>{message.title}</strong>
+                        <span className="message-role">
+                          {message.role === "user" ? "输入" : "结果"} · {formatTime(message.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {message.note ? <p className="message-note">{message.note}</p> : null}
+
+                    {message.imageDataUrl ? (
+                      <div className="result-image-wrap">
+                        <Image
+                          className="result-image"
+                          src={message.imageDataUrl}
+                          alt={message.title}
+                          width={1536}
+                          height={1024}
+                          unoptimized
+                        />
+                        <a className="download-link" href={message.imageDataUrl} download={`${message.title}.png`}>
+                          下载图片
+                        </a>
+                      </div>
+                    ) : null}
+
+                    {message.content ? <pre className="result-text">{message.content}</pre> : null}
+
+                    {message.actions?.length ? (
+                      <ul className="result-actions">
+                        {message.actions.map((action) => (
+                          <li key={action}>{action}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+
+                    <MetaSummary message={message} />
+                  </article>
+                ))}
+                <div ref={endRef} />
+              </>
+            ) : (
+              <div className="thread-empty">
                 <div>
-                  <span className="card-kicker">参数</span>
-                  <h3>输入内容</h3>
+                  <strong>{activeCard.title}</strong>
+                  <p>{activeMeta.emptyText}</p>
                 </div>
-                <span className="scope-pill">{activeMeta.scope}</span>
+              </div>
+            )}
+
+            {error ? <p className="error-banner">{error}</p> : null}
+          </section>
+
+          <section className="composer-panel">
+            <div className="composer-top">
+              <div>
+                <span className="card-kicker">INPUT</span>
+                <h3>输入内容</h3>
               </div>
 
+              <div className="composer-actions">
+                <button type="button" className="ghost-button" onClick={startNewChat}>
+                  清空会话
+                </button>
+                <button type="button" className="submit-button" onClick={() => void submit()} disabled={loading}>
+                  {loading ? "处理中..." : activeMeta.submitText}
+                </button>
+              </div>
+            </div>
+
+            <div className="form-grid">
               {activeSkill === "chanping-toutu" ? (
-                <div className="form-grid">
+                <>
                   <ChoiceField
                     label="设计类型"
                     value={visualForm.designType}
@@ -400,9 +849,7 @@ export function SkillStudio() {
                   <Field label="门店名称">
                     <input
                       value={visualForm.storeName}
-                      onChange={(event) =>
-                        setVisualForm((prev) => ({ ...prev, storeName: event.target.value }))
-                      }
+                      onChange={(event) => setVisualForm((prev) => ({ ...prev, storeName: event.target.value }))}
                       placeholder="CC GYM 新街口店"
                     />
                   </Field>
@@ -410,32 +857,23 @@ export function SkillStudio() {
                   <Field label="产品名称">
                     <input
                       value={visualForm.productName}
-                      onChange={(event) =>
-                        setVisualForm((prev) => ({ ...prev, productName: event.target.value }))
-                      }
-                      placeholder="99 元健身月卡"
+                      onChange={(event) => setVisualForm((prev) => ({ ...prev, productName: event.target.value }))}
+                      placeholder="99元健身月卡"
                     />
                   </Field>
 
                   <Field label="价格信息">
                     <input
                       value={visualForm.price}
-                      onChange={(event) =>
-                        setVisualForm((prev) => ({ ...prev, price: event.target.value }))
-                      }
-                      placeholder="原价 259，活动价 99"
+                      onChange={(event) => setVisualForm((prev) => ({ ...prev, price: event.target.value }))}
+                      placeholder="99元 / 原价259元"
                     />
                   </Field>
 
-                  <Field
-                    label="主题色"
-                    aside={themePreview ? <span className="color-dot" style={{ backgroundColor: themePreview }} /> : null}
-                  >
+                  <Field label="主题色">
                     <input
                       value={visualForm.themeColor}
-                      onChange={(event) =>
-                        setVisualForm((prev) => ({ ...prev, themeColor: event.target.value }))
-                      }
+                      onChange={(event) => setVisualForm((prev) => ({ ...prev, themeColor: event.target.value }))}
                       placeholder="薄荷青 / #69d7d1"
                     />
                   </Field>
@@ -443,24 +881,20 @@ export function SkillStudio() {
                   <Field label="产品权益" className="span-2">
                     <textarea
                       value={visualForm.benefits}
-                      onChange={(event) =>
-                        setVisualForm((prev) => ({ ...prev, benefits: event.target.value }))
-                      }
-                      placeholder="每条一行：免费淋浴 / 免费停车 / 巡场教练 / 体测"
+                      onChange={(event) => setVisualForm((prev) => ({ ...prev, benefits: event.target.value }))}
+                      placeholder="免费淋浴 / 免费停车 / 巡场教练 / 体测"
                     />
                   </Field>
 
                   <Field label="补充要求" className="span-2">
                     <textarea
                       value={visualForm.extraNotes}
-                      onChange={(event) =>
-                        setVisualForm((prev) => ({ ...prev, extraNotes: event.target.value }))
-                      }
-                      placeholder="高级、清晰、少小字、有商业感"
+                      onChange={(event) => setVisualForm((prev) => ({ ...prev, extraNotes: event.target.value }))}
+                      placeholder="如：像样板图一，主标题更大，少小字。"
                     />
                   </Field>
 
-                  <Field label="Logo 素材" hint="支持多张" className="span-2">
+                  <Field label="Logo 素材" className="span-2">
                     <input
                       type="file"
                       accept="image/*"
@@ -470,10 +904,10 @@ export function SkillStudio() {
                         setVisualForm((prev) => ({ ...prev, logoAssets: assets }));
                       }}
                     />
-                    <UploadSummary assets={visualForm.logoAssets} emptyLabel="未上传 Logo" />
+                    <UploadSummary assets={visualForm.logoAssets} emptyLabel="还没有上传 Logo" />
                   </Field>
 
-                  <Field label="参考样板图" hint="可选" className="span-2">
+                  <Field label="参考样图" className="span-2" hint="可选">
                     <input
                       type="file"
                       accept="image/*"
@@ -483,13 +917,13 @@ export function SkillStudio() {
                         setVisualForm((prev) => ({ ...prev, referenceAssets: assets }));
                       }}
                     />
-                    <UploadSummary assets={visualForm.referenceAssets} emptyLabel="未上传样板图" />
+                    <UploadSummary assets={visualForm.referenceAssets} emptyLabel="还没有上传参考图" />
                   </Field>
-                </div>
+                </>
               ) : null}
 
               {activeSkill === "duanshipin-moban" ? (
-                <div className="form-grid">
+                <>
                   <ChoiceField
                     label="脚本路线"
                     value={videoForm.route}
@@ -501,9 +935,7 @@ export function SkillStudio() {
                   <Field label="视频目标">
                     <input
                       value={videoForm.goal}
-                      onChange={(event) =>
-                        setVideoForm((prev) => ({ ...prev, goal: event.target.value }))
-                      }
+                      onChange={(event) => setVideoForm((prev) => ({ ...prev, goal: event.target.value }))}
                       placeholder="转化 / 信任 / 预热"
                     />
                   </Field>
@@ -514,16 +946,14 @@ export function SkillStudio() {
                       onChange={(event) =>
                         setVideoForm((prev) => ({ ...prev, productName: event.target.value }))
                       }
-                      placeholder="99 元健身月卡"
+                      placeholder="99元健身月卡"
                     />
                   </Field>
 
                   <Field label="价格信息">
                     <input
                       value={videoForm.price}
-                      onChange={(event) =>
-                        setVideoForm((prev) => ({ ...prev, price: event.target.value }))
-                      }
+                      onChange={(event) => setVideoForm((prev) => ({ ...prev, price: event.target.value }))}
                       placeholder="营销路线可填"
                     />
                   </Field>
@@ -544,34 +974,30 @@ export function SkillStudio() {
                       onChange={(event) =>
                         setVideoForm((prev) => ({ ...prev, storeAdvantages: event.target.value }))
                       }
-                      placeholder="1000 平场地 / 百台进口器械 / 免费淋浴 / 免费停车"
-                    />
-                  </Field>
-
-                  <Field label="补充要求" className="span-2">
-                    <textarea
-                      value={videoForm.extraNotes}
-                      onChange={(event) =>
-                        setVideoForm((prev) => ({ ...prev, extraNotes: event.target.value }))
-                      }
-                      placeholder="口语化 / 多场景 / 节奏快一点"
+                      placeholder="1000平场地 / 百台进口器械 / 免费淋浴 / 免费停车"
                     />
                   </Field>
 
                   <Field label="参考资料" className="span-2">
                     <textarea
                       value={videoForm.sourceNotes}
-                      onChange={(event) =>
-                        setVideoForm((prev) => ({ ...prev, sourceNotes: event.target.value }))
-                      }
-                      placeholder="飞书笔记、账号观察、参考表达都可以放这里"
+                      onChange={(event) => setVideoForm((prev) => ({ ...prev, sourceNotes: event.target.value }))}
+                      placeholder="飞书笔记、账号观察、参考表达都可以放这里。"
                     />
                   </Field>
-                </div>
+
+                  <Field label="补充要求" className="span-2">
+                    <textarea
+                      value={videoForm.extraNotes}
+                      onChange={(event) => setVideoForm((prev) => ({ ...prev, extraNotes: event.target.value }))}
+                      placeholder="如：更口语一点，多场景，更像真实出镜。"
+                    />
+                  </Field>
+                </>
               ) : null}
 
               {activeSkill === "zhibo-huashu" ? (
-                <div className="form-grid">
+                <>
                   <ChoiceField
                     label="任务模式"
                     value={liveForm.mode}
@@ -580,22 +1006,10 @@ export function SkillStudio() {
                     className="span-2"
                   />
 
-                  <Field label="直播目标">
-                    <input
-                      value={liveForm.goal}
-                      onChange={(event) =>
-                        setLiveForm((prev) => ({ ...prev, goal: event.target.value }))
-                      }
-                      placeholder="成交 / 核销 / 逼单"
-                    />
-                  </Field>
-
                   <Field label="门店位置">
                     <input
                       value={liveForm.location}
-                      onChange={(event) =>
-                        setLiveForm((prev) => ({ ...prev, location: event.target.value }))
-                      }
+                      onChange={(event) => setLiveForm((prev) => ({ ...prev, location: event.target.value }))}
                       placeholder="南京新街口三楼"
                     />
                   </Field>
@@ -607,6 +1021,14 @@ export function SkillStudio() {
                         setLiveForm((prev) => ({ ...prev, campaignTheme: event.target.value }))
                       }
                       placeholder="新店预售"
+                    />
+                  </Field>
+
+                  <Field label="直播目标">
+                    <input
+                      value={liveForm.goal}
+                      onChange={(event) => setLiveForm((prev) => ({ ...prev, goal: event.target.value }))}
+                      placeholder="成交 / 核销 / 逼单"
                     />
                   </Field>
 
@@ -626,27 +1048,15 @@ export function SkillStudio() {
                       onChange={(event) =>
                         setLiveForm((prev) => ({ ...prev, storeAdvantages: event.target.value }))
                       }
-                      placeholder="1000 平场地 / 5 米挑高 / 百台进口器械 / 免费淋浴"
+                      placeholder="1000平场地 / 5米挑高 / 百台进口器械 / 免费淋浴"
                     />
                   </Field>
 
                   <Field label="团单内容" className="span-2">
                     <textarea
                       value={liveForm.offerContent}
-                      onChange={(event) =>
-                        setLiveForm((prev) => ({ ...prev, offerContent: event.target.value }))
-                      }
-                      placeholder="99 元健身月卡 + 核心权益"
-                    />
-                  </Field>
-
-                  <Field label="补充要求" className="span-2">
-                    <textarea
-                      value={liveForm.extraNotes}
-                      onChange={(event) =>
-                        setLiveForm((prev) => ({ ...prev, extraNotes: event.target.value }))
-                      }
-                      placeholder="逼单更强 / 7 天内核销送礼"
+                      onChange={(event) => setLiveForm((prev) => ({ ...prev, offerContent: event.target.value }))}
+                      placeholder="99元健身月卡 + 核心权益"
                     />
                   </Field>
 
@@ -656,64 +1066,275 @@ export function SkillStudio() {
                       onChange={(event) =>
                         setLiveForm((prev) => ({ ...prev, currentScript: event.target.value }))
                       }
-                      placeholder="优化模式可直接粘贴原稿"
+                      placeholder="优化模式可直接粘贴原稿。"
                     />
                   </Field>
-                </div>
+
+                  <Field label="补充要求" className="span-2">
+                    <textarea
+                      value={liveForm.extraNotes}
+                      onChange={(event) => setLiveForm((prev) => ({ ...prev, extraNotes: event.target.value }))}
+                      placeholder="如：逼单更强，7天内核销送小礼品。"
+                    />
+                  </Field>
+                </>
               ) : null}
 
-              <div className="action-row">
-                <button type="button" className="submit-button" onClick={submit} disabled={loading}>
-                  {loading ? "生成中..." : activeMeta.submitText}
-                </button>
-              </div>
-            </section>
+              {activeSkill === "xiaohongshu-biji" ? (
+                <>
+                  <ChoiceField
+                    label="输出类型"
+                    value={xhsForm.outputType}
+                    options={xhsOutputs}
+                    onChange={(outputType) =>
+                      setXhsForm((prev) => ({
+                        ...prev,
+                        outputType: outputType as XiaohongshuForm["outputType"],
+                      }))
+                    }
+                    className="span-2"
+                  />
 
-            <section className="result-card">
-              <div className="card-header">
-                <div>
-                  <span className="card-kicker">结果</span>
-                  <h3>生成内容</h3>
-                </div>
-                <span className="scope-pill ghost">{resultBadge}</span>
-              </div>
+                  <ChoiceField
+                    label="笔记路线"
+                    value={xhsForm.route}
+                    options={xhsRoutes}
+                    onChange={(route) => setXhsForm((prev) => ({ ...prev, route }))}
+                    className="span-2"
+                  />
 
-              <div className={`result-body${!error && !result.type ? " empty" : ""}`}>
-                {error ? <p className="error-text">{error}</p> : null}
+                  <Field label="门店名称">
+                    <input
+                      value={xhsForm.storeName}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, storeName: event.target.value }))}
+                      placeholder="CC GYM 新街口店"
+                    />
+                  </Field>
 
-                {!error && !result.type ? (
-                  <div className="result-placeholder">
-                    <strong>{activeMeta.emptyTitle}</strong>
-                    <p>{activeMeta.emptyText}</p>
-                  </div>
-                ) : null}
+                  <Field label="门店位置">
+                    <input
+                      value={xhsForm.location}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, location: event.target.value }))}
+                      placeholder="南京新街口"
+                    />
+                  </Field>
 
-                {result.note ? <p className="result-note">{result.note}</p> : null}
+                  <Field label="产品或主题">
+                    <input
+                      value={xhsForm.productName}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, productName: event.target.value }))}
+                      placeholder="99元健身月卡 / 新手减脂体验"
+                    />
+                  </Field>
 
-                {result.actions?.length ? (
-                  <ul className="result-actions">
-                    {result.actions.map((action) => (
-                      <li key={action}>{action}</li>
-                    ))}
-                  </ul>
-                ) : null}
+                  <Field label="笔记目的">
+                    <input
+                      value={xhsForm.goal}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, goal: event.target.value }))}
+                      placeholder="团购转化 / 种草进店 / 建立信任"
+                    />
+                  </Field>
 
-                {result.imageDataUrl ? (
-                  <div className="result-image-wrap">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={result.imageDataUrl} alt="生成结果" className="result-image" />
-                    <a href={result.imageDataUrl} download="skill-studio-result.png" className="download-link">
-                      下载图片
-                    </a>
-                  </div>
-                ) : null}
+                  <Field label="价格信息">
+                    <input
+                      value={xhsForm.price}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, price: event.target.value }))}
+                      placeholder="仅团购转化型建议填写"
+                    />
+                  </Field>
 
-                {result.text ? <pre className="result-text">{result.text}</pre> : null}
-              </div>
-            </section>
-          </div>
+                  <Field label="主题色">
+                    <input
+                      value={xhsForm.themeColor}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, themeColor: event.target.value }))}
+                      placeholder="薄荷青 / #69d7d1"
+                    />
+                  </Field>
+
+                  <Field label="目标人群">
+                    <input
+                      value={xhsForm.targetAudience}
+                      onChange={(event) =>
+                        setXhsForm((prev) => ({ ...prev, targetAudience: event.target.value }))
+                      }
+                      placeholder="附近白领 / 新手健身 / 减脂女生"
+                    />
+                  </Field>
+
+                  <Field label="语气要求">
+                    <input
+                      value={xhsForm.tone}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, tone: event.target.value }))}
+                      placeholder="真实 / 轻松 / 干净 / 像真实体验"
+                    />
+                  </Field>
+
+                  <Field label="产品权益" className="span-2">
+                    <textarea
+                      value={xhsForm.benefits}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, benefits: event.target.value }))}
+                      placeholder="免费淋浴 / 免费停车 / 巡场教练 / 体测"
+                    />
+                  </Field>
+
+                  <Field label="门店卖点" className="span-2">
+                    <textarea
+                      value={xhsForm.storeHighlights}
+                      onChange={(event) =>
+                        setXhsForm((prev) => ({ ...prev, storeHighlights: event.target.value }))
+                      }
+                      placeholder="1000平场地 / 百台进口器械 / 24小时通风系统"
+                    />
+                  </Field>
+
+                  <Field label="参考风格" className="span-2">
+                    <textarea
+                      value={xhsForm.referenceStyle}
+                      onChange={(event) =>
+                        setXhsForm((prev) => ({ ...prev, referenceStyle: event.target.value }))
+                      }
+                      placeholder="想要的笔记感觉、对标账号、封面风格都可以写这里。"
+                    />
+                  </Field>
+
+                  <Field label="常用话题词" className="span-2">
+                    <textarea
+                      value={xhsForm.hashtags}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, hashtags: event.target.value }))}
+                      placeholder="#健身房 #本地生活 #减脂 #月卡"
+                    />
+                  </Field>
+
+                  <Field label="补充要求" className="span-2">
+                    <textarea
+                      value={xhsForm.extraNotes}
+                      onChange={(event) => setXhsForm((prev) => ({ ...prev, extraNotes: event.target.value }))}
+                      placeholder="如：不要太广告，封面更清爽。"
+                    />
+                  </Field>
+
+                  <Field label="Logo 素材" className="span-2" hint="封面图可选">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={async (event) => {
+                        const assets = await readFiles(event.target.files);
+                        setXhsForm((prev) => ({ ...prev, logoAssets: assets }));
+                      }}
+                    />
+                    <UploadSummary assets={xhsForm.logoAssets} emptyLabel="还没有上传 Logo" />
+                  </Field>
+
+                  <Field label="参考样图" className="span-2" hint="封面图可选">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={async (event) => {
+                        const assets = await readFiles(event.target.files);
+                        setXhsForm((prev) => ({ ...prev, referenceAssets: assets }));
+                      }}
+                    />
+                    <UploadSummary assets={xhsForm.referenceAssets} emptyLabel="还没有上传参考图" />
+                  </Field>
+                </>
+              ) : null}
+            </div>
+          </section>
         </section>
       </section>
+
+      {settingsOpen ? (
+        <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}>
+          <section className="settings-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="settings-head">
+              <div>
+                <span className="card-kicker">SETTINGS</span>
+                <h3>用户信息收集</h3>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setSettingsOpen(false)}>
+                ×
+              </button>
+            </div>
+
+            <div className="form-grid compact">
+              <Field label="常用门店名">
+                <input
+                  value={profile.storeName}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, storeName: event.target.value }))}
+                  placeholder="CC GYM 新街口店"
+                />
+              </Field>
+
+              <Field label="常用位置">
+                <input
+                  value={profile.location}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, location: event.target.value }))}
+                  placeholder="南京新街口"
+                />
+              </Field>
+
+              <Field label="常用主题色">
+                <input
+                  value={profile.themeColor}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, themeColor: event.target.value }))}
+                  placeholder="薄荷青 / #69d7d1"
+                />
+              </Field>
+
+              <Field label="笔记常用语气">
+                <input
+                  value={profile.noteTone}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, noteTone: event.target.value }))}
+                  placeholder="真实、轻松、像体验分享"
+                />
+              </Field>
+
+              <Field label="常用门店标签" className="span-2">
+                <textarea
+                  value={profile.storeTags}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, storeTags: event.target.value }))}
+                  placeholder="24小时通风 / 进口器械 / 免费停车 / 免费淋浴"
+                />
+              </Field>
+
+              <Field label="默认目标人群">
+                <input
+                  value={profile.defaultAudience}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, defaultAudience: event.target.value }))}
+                  placeholder="附近白领 / 新手减脂 / 月卡用户"
+                />
+              </Field>
+
+              <Field label="默认封面风格">
+                <input
+                  value={profile.coverStyle}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, coverStyle: event.target.value }))}
+                  placeholder="清爽 / 对比强 / 高点击封面"
+                />
+              </Field>
+
+              <Field label="常用话题词" className="span-2">
+                <textarea
+                  value={profile.topicWords}
+                  onChange={(event) => setProfile((prev) => ({ ...prev, topicWords: event.target.value }))}
+                  placeholder="#健身房 #本地生活 #减脂 #训练日常"
+                />
+              </Field>
+            </div>
+
+            <div className="settings-actions">
+              <button type="button" className="ghost-button" onClick={() => setSettingsOpen(false)}>
+                取消
+              </button>
+              <button type="button" className="submit-button" onClick={saveProfile}>
+                保存信息
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
