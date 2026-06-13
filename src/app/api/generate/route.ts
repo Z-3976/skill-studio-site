@@ -49,6 +49,10 @@ const imageClient = process.env.OPENAI_API_KEY
 
 const encoder = new TextEncoder();
 
+const logGenerationError = (scope: string, error: unknown) => {
+  console.error(`[${scope}]`, error);
+};
+
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "生成失败，请稍后重试。";
 
@@ -193,7 +197,7 @@ const buildImageGuidance = (error: unknown) => {
     return "图片生成额度不足，请补充后再试。";
   }
 
-  if (message.includes("timeout")) {
+  if (message.includes("timeout") || message.includes("timed out")) {
     return "图片生成超时，已尝试重试但仍未完成。";
   }
 
@@ -249,7 +253,8 @@ const generateReviewedText = async (
           : "已完成生成，并做过一轮内容复核。",
       meta: extractResultMeta(payload, finalText),
     };
-  } catch {
+  } catch (error) {
+    logGenerationError("text-generation", error);
     return {
       ...buildTextFallbackResult(payload),
       note: "当前模型不稳定，已回退到本地可用版本。",
@@ -318,11 +323,17 @@ const generateStableImage = async (
     await Promise.all(logoOnlyAssets.map((asset, index) => assetToFile(asset, index)))
   ).filter((file): file is File => Boolean(file));
 
-  const attempts: Array<{ label: string; files: File[] }> = [
-    { label: "all-assets", files: allFiles },
-    { label: "logo-only", files: logoFiles },
-    { label: "text-only", files: [] },
-  ];
+  const attempts: Array<{ label: string; files: File[] }> = [];
+
+  if (allFiles.length > 0) {
+    attempts.push({ label: "all-assets", files: allFiles });
+  }
+
+  if (logoFiles.length > 0 && logoFiles.length < allFiles.length) {
+    attempts.push({ label: "logo-only", files: logoFiles });
+  }
+
+  attempts.push({ label: "text-only", files: [] });
 
   for (const attempt of attempts) {
     try {
@@ -332,7 +343,8 @@ const generateStableImage = async (
       }
     } catch (error) {
       lastErrors.push(error);
-      if (attempt.label !== "text-only") {
+      logGenerationError(`image-${attempt.label}`, error);
+      if (attempt.files.length > 0) {
         await sleep(600);
       }
     }
@@ -539,6 +551,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (isImagePayload(payload)) {
+      logGenerationError("image-result", error);
       const fallback = buildLocalFallback(payload);
       return NextResponse.json({
         type: fallback.type,
@@ -547,6 +560,7 @@ export async function POST(request: Request) {
       });
     }
 
+    logGenerationError("text-result", error);
     const fallback = buildTextFallbackResult(payload);
     return NextResponse.json({
       ...fallback,
