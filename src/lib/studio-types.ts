@@ -69,7 +69,8 @@ export type StudioPayload =
   | { skill: "chanping-toutu"; form: VisualForm }
   | { skill: "duanshipin-moban"; form: VideoForm }
   | { skill: "zhibo-huashu"; form: LiveForm }
-  | { skill: "xiaohongshu-biji"; form: XiaohongshuForm };
+  | { skill: "xiaohongshu-biji"; form: XiaohongshuForm }
+  | { skill: "xiaohongshu-bijitu"; form: XiaohongshuForm };
 
 export type ResultMeta = {
   route?: string;
@@ -77,6 +78,7 @@ export type ResultMeta = {
   coverCopy?: string;
   hashtags?: string[];
   reviewSummary?: string;
+  savedPath?: string;
 };
 
 export type AssistantResult = {
@@ -106,4 +108,39 @@ export type StudioMessage = {
   imageDataUrl?: string;
   resultType?: ResultType;
   meta?: ResultMeta;
+};
+
+export type UserProfile = {
+  storeName: string;
+  location: string;
+  storeHighlights: string;
+  mainOfferPrice: string;
+  mainOfferContent: string;
+  logoAssets: UploadAsset[];
+  themeColor: string;
+  redemptionGift7d: string;
+};
+
+export type HistoryRecord = {
+  id: string;
+  skillId: SkillId;
+  title: string;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+  starred: boolean;
+  resultType: ResultType;
+  messages: StudioMessage[];
+  meta?: ResultMeta;
+};
+
+export type AuthUser = {
+  id: string;
+  username: string;
+};
+
+export type StudioState = {
+  user: AuthUser;
+  profile: UserProfile;
+  history: HistoryRecord[];
 };

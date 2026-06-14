@@ -21,8 +21,8 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "门店内容工作台",
-  description: "统一生成产品头图、短视频脚本、直播话术和小红书笔记内容。",
+  title: "亿达商学",
+  description: "统一生成产品头图、短视频脚本、直播话术和小红书内容。",
 };
 
 export default function RootLayout({
@@ -31,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" data-theme="dark" suppressHydrationWarning>
       <body className={`${titleFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>{children}</body>
     </html>
   );

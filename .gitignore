@@ -13,3 +13,6 @@ dev-server.log
 
 .vercel
 .npm-cache/
+.codex-preview/
+.next-*.log
+data/
