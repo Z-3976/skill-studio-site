@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { HistoryRecord, UploadAsset, UserProfile } from "@/lib/studio-types";
 
@@ -36,7 +37,9 @@ type StoreShape = {
   history: StoredHistory[];
 };
 
-const STORE_DIR = path.join(process.cwd(), "data");
+const STORE_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "skill-studio-data")
+  : path.join(process.cwd(), "data");
 const STORE_PATH = path.join(STORE_DIR, "skill-studio.json");
 
 const emptyProfile = (): UserProfile => ({
